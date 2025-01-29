@@ -8,6 +8,10 @@ app.get('/api/data', (req, res) => {
   res.json({ message: 'Hello from the server!' });
 });
 
+app.get('/', (req, res) => {
+  res.json({ message: 'Hi' });
+});
+
 app.post('/api/data', (req, res) => {
   const receivedData = req.body; 
   console.log('Received data:', receivedData);
