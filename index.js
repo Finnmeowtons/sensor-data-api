@@ -1,23 +1,62 @@
-const express = require('express');
-const app = express();
-const port = 3000;
+const mqtt = require("mqtt");
+const connection = require("./connection");
 
-app.use(express.json()); 
+const mqttBroker = 'mqtt://157.245.204.46:1883';
+const mqttClient = mqtt.connect(mqttBroker);
 
-app.get('/api/data', (req, res) => {
-  res.json({ message: 'Hello from the server!' });
+let lastValues = {};
+
+mqttClient.on("connect", () => {
+    console.log("Connected to MQTT broker");
+    const topics = [
+        "sensor/+/temperature",
+        "sensor/+/humidity",
+        "sensor/+/soilTemperature",
+        "sensor/+/soilMoisture",
+        "sensor/+/phLevel",
+        "device/+/waterPump",
+        "device/+/faucet"
+    ];
+
+    mqttClient.subscribe(topics, (err) => {
+        if (!err) {
+            console.log("Subscribed to all sensor and device topics");
+        }
+    });
 });
 
-app.get('/', (req, res) => {
-  res.json({ message: 'Hi' });
+mqttClient.on("message", (topic, message) => {
+  try {
+      const parsedMessage = JSON.parse(message.toString());
+      if (!parsedMessage.deviceId || parsedMessage.value === undefined) {
+          console.error("Invalid JSON format", parsedMessage);
+          return;
+      }
+
+      const deviceId = parsedMessage.deviceId;
+      const value = parsedMessage.value;
+      console.log(new Date().toISOString());
+      
+      const sensorType = topic.split("/")[2];
+      
+      if (!lastValues[deviceId]) {
+          lastValues[deviceId] = {};
+      }
+
+      if (lastValues[deviceId][sensorType] !== value) {
+          lastValues[deviceId][sensorType] = value;
+          saveToDatabase(deviceId, sensorType, value);
+      }
+  } catch (error) {
+      console.error("Error parsing message", error);
+  }
 });
 
-app.post('/api/data', (req, res) => {
-  const receivedData = req.body; 
-  console.log('Received data:', receivedData);
-  res.status(200).json({ message: 'Data received successfully!' });
-});
+function saveToDatabase(deviceId, sensorType, value) {
+  console.log(`Saving device ${deviceId} - ${sensorType}: ${value}`);
+  connection.query("INSERT INTO readings (device_id, sensor_type, value) VALUES (?, ?, ?)", 
+      [deviceId, sensorType, value], (err, result) => {
+          if (err) console.error("Database insert error:", err);
+      });
+}
 
-app.listen(port, () => {
-  console.log(`Server listening on http://localhost:${port}`);
-});
