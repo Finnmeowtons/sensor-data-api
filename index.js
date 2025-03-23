@@ -48,13 +48,19 @@ mqttClient.on("message", (topic, message) => {
                 lastValues[deviceId][sensorType] = value;
                 saveToDatabase(deviceId, sensorType, value);
 
-                // if (sensorType === "soil_moisture_raw" && value === "dry") {
-                //     const faucetState = true; // Faucet turns ON if soil is dry
-                //     const payload = JSON.stringify({ faucet_state: faucetState });
+                if (sensorType === "soil_moisture_raw" && value <= 450) {
+                    const faucetState = true; // Faucet turns ON if soil is dry
+                    const payload = JSON.stringify({ faucet_state: faucetState });
 
-                //     console.log(`🚰 Soil is dry. Sending faucet state: ${faucetState}`);
-                //     mqttClient.publish("water-level/full-state", payload);
-                // }
+                    console.log(`🚰 Soil is dry. Sending faucet state: ${faucetState}`);
+                    mqttClient.publish("water-level/full-state", payload);
+                } else if (sensorType === "soil_moisture_raw" && value >= 451) {
+                    const faucetState = false; // Faucet turns OFF if soil is dry
+                    const payload = JSON.stringify({ faucet_state: faucetState });
+
+                    console.log(`🚰 Soil is wet. Sending faucet state: ${faucetState}`);
+                    mqttClient.publish("water-level/full-state", payload);
+                }
             }
         });
 
