@@ -38,18 +38,23 @@ mqttClient.on("message", (topic, message) => {
         }
         
 
-        const {
+        let {
             device_id,
             temperature,
             humidity,
             soil_moisture_raw,
             soil_moisture_percentage,
             soil_temperature,
-            soil_ph = null,
+            soil_ph,
             nitrogen = null,
             phosphorus = null,
             potassium = null
         } = data;
+
+        // Check if soil_ph is "N/A" or a string and set it to null
+        if (soil_ph.toUpperCase() == 'N/A') {
+            soil_ph = null;
+        }
 
         console.log(`${new Date().toISOString()} - Received data from device ${device_id}`);
 
