@@ -1,6 +1,21 @@
+const express = require('express');
+const cors = require('cors');
+const routes = require('./routes');
+const PORT = 3000;
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+app.use('/api', routes);
+app.listen(PORT, () => {
+    console.log('Server running on http://localhost:3000');
+  });
+
+
+
 const mqtt = require("mqtt");
 const connection = require("./connection");
-
 const mqttBroker = 'mqtt://157.245.204.46:1883';
 const mqttClient = mqtt.connect(mqttBroker);
 
