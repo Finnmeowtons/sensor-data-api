@@ -4,7 +4,7 @@ const connection = require("./connection");
 const mqttBroker = 'mqtt://157.245.204.46:1883';
 const mqttClient = mqtt.connect(mqttBroker);
 
-let lastValues = {};
+let currentMode = "tank";
 
 mqttClient.on("connect", () => {
     console.log("Connected to MQTT broker");
@@ -13,69 +13,85 @@ mqttClient.on("connect", () => {
             console.log("Subscribed to sensor data topic");
         }
     });
+
+    mqttClient.subscribe("water-level/full-state", (err) => {
+        if (!err) console.log("Subscribed to water-level/full-state");
+    });
 });
 
 mqttClient.on("message", (topic, message) => {
     try {
-        const parsedMessage = JSON.parse(message.toString());
-        
-        if (!parsedMessage.device_id) {
-            console.error("Invalid JSON: Missing device_id", parsedMessage);
+        if (topic === "water-level/full-state") {
+            const state = JSON.parse(message.toString());
+            if (state.mode) {
+                currentMode = state.mode.toLowerCase();
+                console.log(`📡 Current mode updated to: ${currentMode}`);
+            }
+            return; // Done with full-state
+        }
+
+        const data = JSON.parse(message.toString());
+
+        if (!data.device_id) {
+            console.error("Invalid JSON: Missing device_id", data);
             return;
         }
+        
 
-        const deviceId = parsedMessage.device_id;
-        console.log(`${new Date().toISOString()} - Received data from device ${deviceId}`);
+        const {
+            device_id,
+            temperature,
+            humidity,
+            soil_moisture_raw,
+            soil_moisture_percentage,
+            soil_temperature,
+            soil_ph = null,
+            nitrogen = null,
+            phosphorus = null,
+            potassium = null
+        } = data;
 
-        // Initialize storage for the device if not exists
-        if (!lastValues[deviceId]) {
-            lastValues[deviceId] = {};
-        }
+        console.log(`${new Date().toISOString()} - Received data from device ${device_id}`);
 
-        // List of sensors and their values
-        const sensorData = {
-            "temperature": parsedMessage.temperature,
-            "humidity": parsedMessage.humidity,
-            "soil_moisture_raw": parsedMessage.soil_moisture_raw,
-            "soil_moisture_percentage": parsedMessage.soil_moisture_percentage,
-            "soil_temperature": parsedMessage.soil_temperature,
-            "soil_ph": parsedMessage.soil_ph
-        };
+        // Insert all data into 'data' table
+        const query = `
+            INSERT INTO data (
+                device_id, temperature, humidity, soil_moisture_raw,
+                soil_moisture_percentage, soil_temperature, soil_ph,
+                nitrogen, phosphorus, potassium
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
 
-        // Save only if the value has changed
-        Object.entries(sensorData).forEach(([sensorType, value]) => {
-            if (value !== undefined && lastValues[deviceId][sensorType] !== value) {
-                lastValues[deviceId][sensorType] = value;
-                saveToDatabase(deviceId, sensorType, value);
+        const values = [
+            device_id,
+            temperature,
+            humidity,
+            soil_moisture_raw,
+            soil_moisture_percentage,
+            soil_temperature,
+            soil_ph,
+            nitrogen,
+            phosphorus,
+            potassium
+        ];
 
-                if (sensorType === "soil_moisture_raw" && value <= 450) {
-                    const faucetState = true; // Faucet turns ON if soil is dry
-                    const payload = JSON.stringify({ faucet_state: faucetState });
-
-                    console.log(`🚰 Soil is dry. Sending faucet state: ${faucetState}`);
-                    mqttClient.publish("water-level/full-state", payload);
-                } else if (sensorType === "soil_moisture_raw" && value >= 451) {
-                    const faucetState = false; // Faucet turns OFF if soil is dry
-                    const payload = JSON.stringify({ faucet_state: faucetState });
-
-                    console.log(`🚰 Soil is wet. Sending faucet state: ${faucetState}`);
-                    mqttClient.publish("water-level/full-state", payload);
-                }
+        connection.query(query, values, (err, result) => {
+            if (err) {
+                console.error("❌ Database insert error:", err);
+            } else {
+                console.log("✅ Data inserted successfully");
             }
         });
 
+        // Auto-pump control based on soil moisture, only if mode is MAIS
+        if (soil_moisture_raw !== undefined && currentMode === "mais") {
+            const pumpState = soil_moisture_raw <= 200;
+            console.log(`💧 Soil moisture: ${soil_moisture_raw}. Sending pump state: ${pumpState}`);
+            mqttClient.publish("water-level/pump-control", pumpState.toString());
+        } else if (soil_moisture_raw !== undefined) {
+            console.log(`🚫 Skipping pump control. Current mode is "${currentMode}"`);
+        }
     } catch (error) {
-        console.error("Error parsing MQTT message:", error);
+        console.error("❌ Error parsing MQTT message:", error);
     }
 });
-
-function saveToDatabase(deviceId, sensorType, value) {
-    console.log(`📌 Saving: Device ${deviceId} - ${sensorType}: ${value}`);
-    connection.query(
-        "INSERT INTO readings (device_id, sensor_type, value) VALUES (?, ?, ?)", 
-        [deviceId, sensorType, value], 
-        (err, result) => {
-            if (err) console.error("❌ Database insert error:", err);
-        }
-    );
-}
