@@ -7,6 +7,39 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+
+// In-memory storage for device IPs
+const deviceIpMap = {};
+
+// ESP32 posts its IP here
+app.post('/api/register-ip', (req, res) => {
+    const { device_id, ip } = req.body;
+    if (!device_id || !ip) {
+        return res.status(400).json({ error: "Missing device_id or ip" });
+    }
+
+    deviceIpMap[device_id] = {
+        ip,
+        timestamp: new Date().toISOString()
+    };
+
+    console.log(`🌐 IP registered: ${device_id} -> ${ip}`);
+    res.json({ message: "IP registered successfully" });
+});
+
+// Flutter fetches latest IP for a device
+app.get('/api/device-ip', (req, res) => {
+    const { device_id } = req.body;
+    if (!device_id || !deviceIpMap[device_id]) {
+        return res.status(404).json({ error: "Device IP not found" });
+    }
+
+    res.json({
+        device_id,
+        ...deviceIpMap[device_id]
+    });
+});
+
 app.use('/api', routes);
 app.listen(PORT, () => {
     console.log('Server running on http://localhost:3000');
@@ -18,6 +51,7 @@ const mqtt = require("mqtt");
 const connection = require("./connection");
 const mqttBroker = 'mqtt://157.245.204.46:1883';
 const mqttClient = mqtt.connect(mqttBroker);
+
 
 let currentMode = "tank";
 
