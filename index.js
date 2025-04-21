@@ -29,7 +29,7 @@ app.post('/api/register-ip', (req, res) => {
 
 // Flutter fetches latest IP for a device
 app.get('/api/device-ip', (req, res) => {
-    const { device_id } = req.body;
+    const { device_id } = req.query;
     if (!device_id || !deviceIpMap[device_id]) {
         return res.status(404).json({ error: "Device IP not found" });
     }
