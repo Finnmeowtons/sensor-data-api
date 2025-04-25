@@ -100,13 +100,13 @@ mqttClient.on("message", (topic, message) => {
             potassium
         } = data;
 
-        // Check if soil_ph is "N/A" or a string and set it to null
-        if (typeof soil_ph === 'string') {
-            soil_ph = soil_ph.toUpperCase();
+        if (soil_ph === "N/A" || soil_ph === "n/a" || soil_ph === "NA" || soil_ph === "na" || soil_ph === undefined) {
+            soil_ph = null;
         } else {
-            console.warn("⚠️ soil_ph is not a string:", soil_ph);
-            soil_ph = String(soil_ph).toUpperCase(); // force it to string just in case
+            soil_ph = parseFloat(soil_ph);
+            if (isNaN(soil_ph)) soil_ph = null;
         }
+        
         
 
         console.log(`${new Date().toISOString()} - Received data from device ${device_id}`);
