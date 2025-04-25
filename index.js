@@ -95,9 +95,9 @@ mqttClient.on("message", (topic, message) => {
             soil_moisture_percentage,
             soil_temperature,
             soil_ph,
-            nitrogen = null,
-            phosphorus = null,
-            potassium = null
+            nitrogen,
+            phosphorus,
+            potassium
         } = data;
 
         // Check if soil_ph is "N/A" or a string and set it to null
