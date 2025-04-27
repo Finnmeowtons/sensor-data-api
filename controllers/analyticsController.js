@@ -7,24 +7,24 @@ class AnalyticController {
     static async rawData(req, res) {
         const { page = 1, limit = 50, device } = req.query;
         const offset = (page - 1) * limit;
-    
+
         try {
             let dataQuery = 'SELECT * FROM data';
             let countQuery = 'SELECT COUNT(*) as total FROM data';
             const queryParams = [];
-    
+
             if (device && device != '0') {
                 dataQuery += ' WHERE device_id = ?';
                 countQuery += ' WHERE device_id = ?';
                 queryParams.push(device);
             }
-    
+
             dataQuery += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
             queryParams.push(parseInt(limit), parseInt(offset));
-    
+
             const [rows] = await pool.query(dataQuery, queryParams);
             const [[{ total }]] = await pool.query(countQuery, device ? [device] : []);
-    
+
             res.json({
                 total,
                 data: rows,
@@ -33,94 +33,47 @@ class AnalyticController {
             res.status(500).json({ error: err.message });
         }
     }
-    
+
 
     // 2️⃣ Aggregated analytics
-    static async analyticsData(req, res) {
-        const { device } = req.query;
-        if (!device){
-            res.status(404).json({error: "No device specified"})
-            return
+    static async aggregatedData(req, res) {
+        const { hours, days } = req.query;
+
+        // Decide the time interval based on input (default to 24 hours if none)
+        let intervalCondition = 'timestamp >= NOW() - INTERVAL 1 DAY';
+        if (hours) {
+            intervalCondition = `timestamp >= NOW() - INTERVAL ${parseInt(hours)} HOUR`;
+        } else if (days) {
+            intervalCondition = `timestamp >= NOW() - INTERVAL ${parseInt(days)} DAY`;
         }
 
         try {
-            const [rows] = pool.query(`
-                SELECT 
-                    COUNT(*) as total_entries,
-                    AVG(value) as average,
-                    MIN(value) as minimum,
-                    MAX(value) as maximum
-                FROM data
-                WHERE device_id = ? 
-            `, [device]);
-    
-            res.json(rows[0]);
+            const [rows] = await pool.execute(`
+            SELECT 
+              FROM_UNIXTIME(UNIX_TIMESTAMP(timestamp) - MOD(UNIX_TIMESTAMP(timestamp), 600)) AS window_start,
+              ROUND(AVG(temperature), 2) AS avg_temperature,
+              ROUND(AVG(humidity), 2) AS avg_humidity,
+              ROUND(AVG(soil_moisture_raw), 2) AS avg_soil_moisture_raw,
+              ROUND(AVG(soil_moisture_percentage), 2) AS avg_soil_moisture_percentage,
+              ROUND(AVG(soil_temperature), 2) AS avg_soil_temperature,
+              ROUND(AVG(soil_ph), 2) AS avg_soil_ph,
+              ROUND(AVG(nitrogen), 2) AS avg_nitrogen,
+              ROUND(AVG(phosphorus), 2) AS avg_phosphorus,
+              ROUND(AVG(potassium), 2) AS avg_potassium
+            FROM data
+            WHERE ${intervalCondition}
+            GROUP BY UNIX_TIMESTAMP(timestamp) DIV 600
+            ORDER BY window_start ASC
+          `);
 
+            res.json(rows);
         } catch (err) {
-            res.status(500).json({ error: err.message });
-
+            console.error('Aggregation error:', err);
+            res.status(500).send('Server Error');
         }
     }
-
-    static async graphData(req, res) {
-        const { start, end, device } = req.query;
-        if (!device) {
-            return res.status(404).json({ error: "No device specified" });
-        }
-    
-        let startDate = start;
-        let endDate = end;
-    
-        if (!startDate || !endDate) {
-            const today = new Date();
-            endDate = today.toISOString().split('T')[0];
-            const past = new Date();
-            past.setDate(today.getDate() - 7);
-            startDate = past.toISOString().split('T')[0];
-        }
-    
-        try {
-            // 1. Get real data
-            const [dataRows] = await pool.query(`
-                SELECT 
-                    FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(timestamp) / 600) * 600) AS interval_start,
-                    AVG(temperature) AS avg_temp,
-                    AVG(humidity) AS avg_humidity,
-                    AVG(soil_moisture_percentage) AS avg_moisture,
-                    AVG(soil_ph) AS avg_ph
-                FROM data
-                WHERE device_id = ? AND timestamp BETWEEN ? AND ?
-                GROUP BY interval_start
-                ORDER BY interval_start ASC
-            `, [device, startDate, endDate]);
-    
-            // 2. Generate full 10-min intervals in JS
-            const result = [];
-            const intervalMap = new Map();
-            dataRows.forEach(row => intervalMap.set(row.interval_start.toISOString(), row));
-    
-            let current = new Date(startDate);
-            const endTime = new Date(endDate);
-            while (current <= endTime) {
-                const intervalStr = new Date(current.getTime() - current.getTime() % (600000)).toISOString(); // Round down to nearest 10 min
-    
-                result.push(intervalMap.get(intervalStr) || {
-                    interval_start: intervalStr,
-                    avg_temp: null,
-                    avg_humidity: null,
-                    avg_moisture: null,
-                    avg_ph: null
-                });
-    
-                current = new Date(current.getTime() + 600000); // add 10 minutes
-            }
-    
-            res.json(result);
-        } catch (err) {
-            res.status(500).json({ error: err.message });
-        }
-    }
-
 }
+
+
 
 module.exports = AnalyticController;
