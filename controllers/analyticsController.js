@@ -49,7 +49,7 @@ class AnalyticController {
         try {
             const [rows] = await pool.execute(`
       SELECT 
-        FROM_UNIXTIME(600 * FLOOR(UNIX_TIMESTAMP(timestamp) / 600)) AS window_start,
+        window_start,
         ROUND(AVG(temperature), 2) AS avg_temperature,
         ROUND(AVG(humidity), 2) AS avg_humidity,
         ROUND(AVG(soil_moisture_raw), 2) AS avg_soil_moisture_raw,
@@ -59,9 +59,22 @@ class AnalyticController {
         ROUND(AVG(nitrogen), 2) AS avg_nitrogen,
         ROUND(AVG(phosphorus), 2) AS avg_phosphorus,
         ROUND(AVG(potassium), 2) AS avg_potassium
-      FROM data
-      WHERE ${intervalCondition}
-      GROUP BY FLOOR(UNIX_TIMESTAMP(timestamp) / 600)
+      FROM (
+        SELECT 
+          FROM_UNIXTIME(UNIX_TIMESTAMP(timestamp) - MOD(UNIX_TIMESTAMP(timestamp), 600)) AS window_start,
+          temperature,
+          humidity,
+          soil_moisture_raw,
+          soil_moisture_percentage,
+          soil_temperature,
+          soil_ph,
+          nitrogen,
+          phosphorus,
+          potassium
+        FROM data
+        WHERE ${intervalCondition}
+      ) AS subquery
+      GROUP BY window_start
       ORDER BY window_start ASC
     `);
 
@@ -72,7 +85,6 @@ class AnalyticController {
         }
     }
 }
-
 
 
 module.exports = AnalyticController;
