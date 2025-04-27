@@ -39,7 +39,6 @@ class AnalyticController {
     static async aggregatedData(req, res) {
         const { hours, days } = req.query;
 
-        // Decide the time interval based on input (default to 24 hours if none)
         let intervalCondition = 'timestamp >= NOW() - INTERVAL 1 DAY';
         if (hours) {
             intervalCondition = `timestamp >= NOW() - INTERVAL ${parseInt(hours)} HOUR`;
@@ -49,22 +48,22 @@ class AnalyticController {
 
         try {
             const [rows] = await pool.execute(`
-            SELECT 
-              FROM_UNIXTIME(UNIX_TIMESTAMP(timestamp) - MOD(UNIX_TIMESTAMP(timestamp), 600)) AS window_start,
-              ROUND(AVG(temperature), 2) AS avg_temperature,
-              ROUND(AVG(humidity), 2) AS avg_humidity,
-              ROUND(AVG(soil_moisture_raw), 2) AS avg_soil_moisture_raw,
-              ROUND(AVG(soil_moisture_percentage), 2) AS avg_soil_moisture_percentage,
-              ROUND(AVG(soil_temperature), 2) AS avg_soil_temperature,
-              ROUND(AVG(soil_ph), 2) AS avg_soil_ph,
-              ROUND(AVG(nitrogen), 2) AS avg_nitrogen,
-              ROUND(AVG(phosphorus), 2) AS avg_phosphorus,
-              ROUND(AVG(potassium), 2) AS avg_potassium
-            FROM data
-            WHERE ${intervalCondition}
-            GROUP BY UNIX_TIMESTAMP(timestamp) DIV 600
-            ORDER BY window_start ASC
-          `);
+      SELECT 
+        FROM_UNIXTIME(600 * FLOOR(UNIX_TIMESTAMP(timestamp) / 600)) AS window_start,
+        ROUND(AVG(temperature), 2) AS avg_temperature,
+        ROUND(AVG(humidity), 2) AS avg_humidity,
+        ROUND(AVG(soil_moisture_raw), 2) AS avg_soil_moisture_raw,
+        ROUND(AVG(soil_moisture_percentage), 2) AS avg_soil_moisture_percentage,
+        ROUND(AVG(soil_temperature), 2) AS avg_soil_temperature,
+        ROUND(AVG(soil_ph), 2) AS avg_soil_ph,
+        ROUND(AVG(nitrogen), 2) AS avg_nitrogen,
+        ROUND(AVG(phosphorus), 2) AS avg_phosphorus,
+        ROUND(AVG(potassium), 2) AS avg_potassium
+      FROM data
+      WHERE ${intervalCondition}
+      GROUP BY FLOOR(UNIX_TIMESTAMP(timestamp) / 600)
+      ORDER BY window_start ASC
+    `);
 
             res.json(rows);
         } catch (err) {
