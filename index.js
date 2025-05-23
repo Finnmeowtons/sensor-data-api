@@ -43,7 +43,7 @@ app.get('/api/device-ip', (req, res) => {
 app.use('/api', routes);
 app.listen(PORT, () => {
     console.log('Server running on http://localhost:3000');
-  });
+});
 
 
 
@@ -53,7 +53,7 @@ const mqttBroker = 'mqtt://157.245.204.46:1883';
 const mqttClient = mqtt.connect(mqttBroker);
 
 
-let currentMode = "tank";
+let currentMode = "mais";
 
 mqttClient.on("connect", () => {
     console.log("Connected to MQTT broker");
@@ -85,7 +85,7 @@ mqttClient.on("message", (topic, message) => {
             console.error("Invalid JSON: Missing device_id", data);
             return;
         }
-        
+
 
         let {
             device_id,
@@ -106,8 +106,8 @@ mqttClient.on("message", (topic, message) => {
             soil_ph = parseFloat(soil_ph);
             if (isNaN(soil_ph)) soil_ph = null;
         }
-        
-        
+
+
 
         console.log(`${new Date().toISOString()} - Received data from device ${device_id}`);
 
@@ -141,13 +141,30 @@ mqttClient.on("message", (topic, message) => {
             }
         });
 
-        // Auto-pump control based on soil moisture, only if mode is MAIS
-        if (soil_moisture_raw !== undefined && currentMode === "mais") {
-            const pumpState = soil_moisture_raw <= 200;
-            console.log(`💧 Soil moisture: ${soil_moisture_raw}. Sending pump state: ${pumpState}`);
-            mqttClient.publish("water-level/pump-control", pumpState.toString());
-        } else if (soil_moisture_raw !== undefined) {
-            console.log(`🚫 Skipping pump control. Current mode is "${currentMode}"`);
+        if (currentMode === "mais") {
+            // Temperature > 30°C triggers irrigation
+            if (temperature !== undefined && temperature > 30) {
+                console.log(`🌡️ High temperature (${temperature}°C) detected. Irrigation should be triggered.`);
+                mqttClient.publish("water-level/faucet-control", "true");
+            } else {
+                mqttClient.publish("water-level/faucet-control", "false");
+            }
+
+            // Soil Moisture < 30% activates water pump
+            if (soil_moisture_percentage !== undefined && soil_moisture_percentage < 30) {
+                console.log(`🌱 Low soil moisture (${soil_moisture_percentage}%) detected. Irrigation should be triggered.`);
+                mqttClient.publish("water-level/faucet-control", "true");
+            } else {
+                mqttClient.publish("water-level/faucet-control", "false");
+            }
+
+            // Humidity < 50% indicates stress condition
+            if (humidity !== undefined && humidity < 50) {
+                console.log(`💨 Low humidity (${humidity}%) detected. Irrigation should be triggered.`);
+                mqttClient.publish("water-level/faucet-control", "true");
+            } else {
+                mqttClient.publish("water-level/faucet-control", "false");
+            }
         }
     } catch (error) {
         console.error("❌ Error parsing MQTT message:", error);
